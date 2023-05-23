@@ -1,0 +1,6 @@
+youtube-transcript-api
+bs4
+openai
+
+# Unnecessary, but useful for loading .env files
+python-dotenv

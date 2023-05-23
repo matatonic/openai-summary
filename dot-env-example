@@ -1,0 +1,3 @@
+# With https://github.com/oobabooga/text-generation-webui/tree/main/extensions/openai
+OPENAI_API_KEY=dummy
+OPENAI_API_BASE=http://0.0.0.0:5001/v1
