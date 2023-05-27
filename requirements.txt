@@ -1,6 +1,7 @@
 youtube-transcript-api
 bs4
 openai
+pysbd
 
 # Unnecessary, but useful for loading .env files
 python-dotenv
