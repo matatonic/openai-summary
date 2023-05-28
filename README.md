@@ -1,11 +1,10 @@
-# URL Summaries
-
-Summarize URL's (including youtube video transcripts) using an OpenAI compatible API.
+# Summarize URL's or files (including YouTube video's via transcripts) using an OpenAI compatible API
 
 Use it for free with: https://github.com/oobabooga/text-generation-webui/tree/main/extensions/openai (shameless self plug!)
+and the [TheBloke](https://huggingface.co/TheBloke)'s vicuna-13B-1.1-GPTQ-4bit-128g or koala-13B-GPTQ-4bit-128g models for excellent results.
 
 Heavily "inspired" by various blog posts and stackexchange comments.
-It's a quick and dirty hack, but it kinda works. I wrote it to pipe (|) to a text-to-speech (tts) application. It uses the 'Edits' interface for OpenAI - which doesn't get enough credit for how great it is.
+It's a quick and dirty hack, but it works pretty well. I wrote it to pipe (|) to a text-to-speech (tts) application. It uses the 'Edits' interface for OpenAI - which doesn't get enough credit for how great it is.
 
 Included as a bonus toy is the edits.py app, which is a thin command line wrapper around the Edits interface.
 
@@ -13,12 +12,12 @@ Included as a bonus toy is the edits.py app, which is a thin command line wrappe
 ### Usage
 
 ```
-usage: url_summary.py [-h] [-p] [-S] [-x] [-X] [-t] [-T] [-b MAX_SIZE] url
+usage: summary.py [-h] [-p] [-S] [-x] [-X] [-t] [-T] [-b MAX_SIZE] url
 
-Summarize URLs, including YouTube transcriptions
+Summarize URLs or files, including YouTube videos via transcriptions
 
 positional arguments:
-  url                   URL of the site to summarize (including YouTube transcriptions)
+  url                   URL or file to summarize (including YouTube videos via transcriptions)
 
 options:
   -h, --help            show this help message and exit
@@ -38,7 +37,7 @@ options:
 
 Example: Quantum Computing Explained (10 min) - https://www.youtube.com/watch?v=jHoEjvuPoB8
 ```
-$ python3 url_summary.py -x -t https://www.youtube.com/watch?v=jHoEjvuPoB8
+$ python3 summary.py -x -t https://www.youtube.com/watch?v=jHoEjvuPoB8
 ```
 *   Quantum computers are based on the principles of quantum mechanics, which allows them to perform operations on large amounts of data simultaneously.
 *   The key difference between classical and quantum computers lies in their ability to handle complex data structures and perform parallel computations.

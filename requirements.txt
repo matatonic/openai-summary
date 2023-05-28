@@ -1,7 +1,11 @@
 youtube-transcript-api
-bs4
+#bs4
+beautifulsoup4
 openai
 pysbd
+
+# if this is a pain to install, you only lose file summaries.
+textract
 
 # Unnecessary, but useful for loading .env files
 python-dotenv

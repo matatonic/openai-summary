@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# This works very well with TheBloke's vicuna-13B-1.1-GPTQ-4bit-128g and koala-13B-GPTQ-4bit-128g
-
 # Load the environment variables from the .env file
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,16 +11,22 @@ from requests import get
 import openai
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 from bs4 import BeautifulSoup
+try:
+    import textract
+except:
+    pass
+
 import pysbd
+
 
 seg = pysbd.Segmenter(language='en', clean=True) # text is dirty, clean it up.
 
 
 parser = argparse.ArgumentParser(
-            prog='url_summary.py',
-            description='Summarize URLs, including YouTube transcriptions',
+            prog='summary.py',
+            description='Summarize URLs or files, including YouTube videos via transcriptions',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('url', help="URL of the site to summarize (including YouTube transcriptions)")
+parser.add_argument('url', help="URL or file to summarize (including YouTube videos via transcriptions)")
 parser.add_argument('-p', '--progress', action='store_true', default=False, help="Show percentage progress")
 parser.add_argument('-S', '--no_stream', action='store_true', default=False, help="Don't output text as it's created")
 parser.add_argument('-x', '--executive_summary', action='store_true', default=False, help="Include an Executive Summary")
@@ -32,40 +36,6 @@ parser.add_argument('-T', '--tldr_only', action='store_true', default=False, hel
 parser.add_argument('-b', '--max_size', action='store', default=5000, type=int, help="The maximum size (in characters) to summarize at once.")
 
 args = parser.parse_args()
-
-
-# not useful for most use cases.
-# Experiment failed successfully.
-def time_chunk_transcript(video_id: str) -> list | None:
-    try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        
-    except TranscriptsDisabled:
-        # The video doesn't have a transcript
-        return None
-        
-    t_list = [ (x['text'], x['start'], x['duration']) for x in transcript ]
-
-    ret = []
-
-    t, s, d = t_list.pop(0)
-    e = s + d
-
-    for text, start, duration in t_list:
-        if start <= e: # overlapping
-            #print("+", end='')
-            t += ' ' + text
-            e = start + duration
-        else: # a pause
-            #print(f"\npause of: {start - e} sec")
-            ret.extend([t])
-            t = ''
-            e = start + duration
-
-    if t:
-        ret.extend([t])
-
-    return ret
 
 
 # https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
@@ -80,8 +50,7 @@ def get_url_html(url: str) -> str:
     return get(url, headers=headers).content
 
 
-def get_url_text(url: str) -> list:
-    html = get_url_html(url)
+def get_html_text(html: str) -> list:
     soup = BeautifulSoup(html, features="html.parser")
 
     # kill all script and style elements
@@ -120,6 +89,47 @@ def get_video_transcript(video_id: str) -> list | None:
     return [line["text"] for line in transcript]
 
 
+def get_url_text(url: str) -> list:
+    text_list = [ f"No text found for this url: {url}" ]
+
+    # handle Youtube Videos
+    video_id = extract_youtube_video_id(url)
+    if video_id:
+        # Fetch the video transcript
+        text_list = get_video_transcript(video_id)
+
+        # If no transcript is found, return an error message
+        if not text_list:
+            return f"No English transcript found for this video: {url}"
+    else:
+        # Fetch the url text
+        html = get_url_html(url)
+        text_list = get_html_text(html)
+
+    return text_list
+
+
+def get_file_text(filename: str) -> list:
+    text = textract.process(filename).decode()
+    return seg.segment(text)
+
+
+#def get_file_text(filename: str) -> list:
+#    text_list = [ f"No text found for this file: {filename}" ]
+#
+#    if '.htm' in filename.lower():
+#        with open(filename, 'r') as f:
+#            text_list = get_html_text(f.read())
+#    elif '.pdf' in filename.lower():
+#        with open(filename, 'r') as f:
+#            text_list = get_pdf_text(f.read())
+#    else:
+#        with open(filename, 'r') as f:
+#            text_list = seg.segment(f.read())
+#
+#    return text_list
+
+
 def openai_edit(instruction: str, text: str) -> str:
     response = openai.Edit.create(
         model="gpt-3.5-turbo",
@@ -129,10 +139,11 @@ def openai_edit(instruction: str, text: str) -> str:
     
     return response.choices[0].text
 
-def openai_completion(prompt: str) -> str:
+def openai_completion(prompt: str, max_tokens: int = 2000) -> str:
     response = openai.Completion.create(
         model="gpt-3.5-turbo",
         prompt=prompt,
+        max_tokens=max_tokens,
     )
     
     return response.choices[0].text
@@ -193,31 +204,6 @@ def summarize_large_text(text_list: list, max_size = args.max_size, stream = Fal
 
     return '\n'.join(summaries)
 
-def summarize_url(url: str, max_size = args.max_size, stream = False, progress = False) -> str:
-    """
-    Summarize the provided url
-    """
-    text_list = [ f"No text found for this url: {url}" ]
-
-    # handle Youtube Videos
-    video_id = extract_youtube_video_id(url)
-    if video_id is not None:
-        # Fetch the video transcript
-        text_list = get_video_transcript(video_id)
-
-        # If no transcript is found, return an error message
-        if not text_list:
-            return f"No English transcript found for this video: {url}"
-    else:
-        # Fetch the url text
-        text_list = get_url_text(url)
-
-    # Generate the summary
-    summary = summarize_large_text(text_list, max_size=max_size, stream=stream, progress=progress)
-
-    # Return the summary
-    return summary
-
 
 if __name__ == '__main__':
     if args.executive_summary_only:
@@ -228,7 +214,14 @@ if __name__ == '__main__':
         args.no_stream = True
         args.tldr = True
 
-    summary = summarize_url(args.url, progress=args.progress, stream= not args.no_stream)
+    text_list = [ "No text found" ]
+
+    if args.url.lower().startswith('http'):
+        text_list = get_url_text(args.url)
+    else:
+        text_list = get_file_text(args.url)
+
+    summary = summarize_large_text(text_list, max_size=args.max_size, stream= not args.no_stream, progress=args.progress)
 
     if args.no_stream and not (args.executive_summary_only or args.tldr_only):
         print(summary)
