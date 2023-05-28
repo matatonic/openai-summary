@@ -19,7 +19,7 @@ seg = pysbd.Segmenter(language='en', clean=True) # text is dirty, clean it up.
 
 
 parser = argparse.ArgumentParser(
-            prog='url_summary',
+            prog='url_summary.py',
             description='Summarize URLs, including YouTube transcriptions',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('url', help="URL of the site to summarize (including YouTube transcriptions)")

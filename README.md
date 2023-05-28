@@ -9,52 +9,50 @@ It's a quick and dirty hack, but it kinda works. I wrote it to pipe (|) to a tex
 
 Included as a bonus toy is the edits.py app, which is a thin command line wrapper around the Edits interface.
 
-```
-./edits.py Summarize the following README.md < README.md 
-```
-This repository provides a Python script that summarizes URLs using OpenAI's text-generation web UI. The script takes a URL as input and outputs a summary of the content in the form of a list of bullet points. The author also includes a bonus "thin command line wrapper around the Edits interface" called edits.py for users who want to use the OpenAI extension. There are examples included to demonstrate how the script works, including a summary of a YouTube video on quantum computing and another on Cacio e Pepe pasta.
-
 
 ### Usage
 
 ```
-python3 url_summary.py https://www.youtube.com/watch?v=XXX
-python3 url_summary.py https://youtu.be/XXX
-python3 url_summary.py <some other url with text>
+usage: url_summary.py [-h] [-p] [-S] [-x] [-X] [-t] [-T] [-b MAX_SIZE] url
+
+Summarize URLs, including YouTube transcriptions
+
+positional arguments:
+  url                   URL of the site to summarize (including YouTube transcriptions)
+
+options:
+  -h, --help            show this help message and exit
+  -p, --progress        Show percentage progress (default: False)
+  -S, --no_stream       Don't output text as it's created (default: False)
+  -x, --executive_summary
+                        Include an Executive Summary (default: False)
+  -X, --executive_summary_only
+                        Only output the Executive Summary (default: False)
+  -t, --tldr            Include a TL;DR (default: False)
+  -T, --tldr_only       Only output a TL;DR (default: False)
+  -b MAX_SIZE, --max_size MAX_SIZE
+                        The maximum size (in characters) to summarize at once. (default: 5000)
 ```
 
-## Examples
+## Example
 
 Example: Quantum Computing Explained (10 min) - https://www.youtube.com/watch?v=jHoEjvuPoB8
 ```
-$ python3 url_summary.py https://www.youtube.com/watch?v=jHoEjvuPoB8
+$ python3 url_summary.py -x -t https://www.youtube.com/watch?v=jHoEjvuPoB8
 ```
-* Quantum computer located inside a refrigerator at near-absolute temperatures.
-* Promise of revolutionizing lives with turbo-charged computation.
-* Not the next generation of supercomputers but something else entirely.
-* Requires understanding of fundamental physics of quantum computing.
-* Richard Feynman proposed the idea of a quantum computer in the 1980s.
-* Classical computers cannot handle the exponential increase in computation required by quantum systems.
-* Feynman's idea was to create a tool made of quantum elements to study quantum phenomena.
-* Amplitudes in quantum mechanics differ from classical probability in that they are complex numbers.
-* Qubits are the basic computational units in quantum computing, storing information in a state of superposition.
-* Superposition allows quantum computers to store and manipulate vast amounts of data compared to classical computers.
-* Entanglement occurs when two or more qubits are in a state of superposition and their final outcomes are mathematically related.
-* A quantum computer requires more classical bits than there are atoms in the known universe when expanded to include 500 entangled qubits.
-* Measuring information from qubits collapses their state, making it impossible to obtain an output without losing information.
-* Interference is used to extract an answer from a quantum system that is not a random outcome of probability.
-* Deterministic sequences of qubit gates can be created to harness interference and increase the probability of finding the correct answer.
-* Designing quantum algorithms is challenging because scientists themselves do not know in advance which answer is the right one.
-* Quantum computers have potential applications in fields such as cybersecurity and search optimization, but their most important application may be exploring the deep structure of the world.
+*   Quantum computers are based on the principles of quantum mechanics, which allows them to perform operations on large amounts of data simultaneously.
+*   The key difference between classical and quantum computers lies in their ability to handle complex data structures and perform parallel computations.
+*   Quantum computers use quantum states (qubits) instead of classical bits to represent and process data. Qubits can exist in multiple states simultaneously, allowing for faster processing speeds compared to classical computers.
+*   Quantum computers rely on the properties of quantum mechanics such as superposition and entanglement to perform computations.
+*   Quantum entanglement is the correlation between particles in a quantum system that is different from classical correlations.
+*   To describe highly entangled states using ordinary bits, it requires a large number of classical bits, making it expensive.
+*   Interference is used to extract an answer from a quantum system without collapsing its state.
+*   The most important application of quantum computers may not be known until a quantum computer is available to experiment with.
 
-Example: About Cacio e Pepe pasta. (10 min) - https://www.youtube.com/watch?v=Ng7GWl57nQM
+Executive Summary
 
-```
-$ python3 url_summary.py https://www.youtube.com/watch?v=Ng7GWl57nQM
-```
-* Cacio e Pepe is a pasta dish made with cheese and pepper.
-* It is considered the most important pasta dish in Italian cuisine.
-* The dish is difficult to master but has a unique texture and taste.
-* Ingredients include pasta (usually made with thick spaghetti), pecorino cheese, black pepper, and water.
-* To create the desired texture, the cheese needs to be melted and mixed with the other ingredients.
-* Stabilizing the emulsion is key to achieving the creamy consistency of Cacio e Pepe.
+Quantum computers have the potential to revolutionize computing by leveraging the principles of quantum mechanics to perform calculations on large amounts of data simultaneously. They differ from classical computers in their ability to handle complex data structures and perform parallel computations. Quantum computers use qubits instead of classical bits to store and process information, allowing for much faster processing speeds. However, they require specialized hardware and software, and the complexity of quantum systems makes them difficult to program. One way to overcome this challenge is through interference, whereby the quantum system's state is manipulated without collapsing it. While the applications of quantum computers are still unknown, they hold great promise for solving problems that classical computers cannot tackle efficiently.
+
+TL;DR
+
+Quantum Computers: A type of computer that uses quantum-mechanical phenomena such as superposition and entanglement to perform operations on data. They can solve certain types of problems much faster than classical computers but are currently limited by their complexity and lack of standardization.
