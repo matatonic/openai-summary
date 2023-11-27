@@ -18,6 +18,7 @@ except:
 
 import pysbd
 
+client = openai.OpenAI()
 
 seg = pysbd.Segmenter(language='en', clean=True) # text is dirty, clean it up.
 
@@ -131,21 +132,23 @@ def get_file_text(filename: str) -> list:
 
 
 def openai_edit(instruction: str, text: str) -> str:
-    response = openai.Edit.create(
+    # edit is deprecated, fake it.
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
-        instruction=instruction,
-        input=text,
+        messages=[{'role': 'system', 'content': instruction}, {'role': 'user', 'content': text} ],
+        temperature=0.2,
     )
     
-    return response.choices[0].text
+    return response.choices[0].message.content
 
 def openai_completion(prompt: str, max_tokens: int = 2000) -> str:
-    response = openai.Completion.create(
+    response = client.completions.create(
         model="gpt-3.5-turbo",
         prompt=prompt,
         max_tokens=max_tokens,
+        temperature=0.2,
     )
-    
+    print(response.choices[0])
     return response.choices[0].text
 
 # arbitrary cut, should fit in 2k context with instructions

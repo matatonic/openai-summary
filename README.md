@@ -1,13 +1,10 @@
 # Summarize URL's or files (including YouTube video's via transcripts) using an OpenAI compatible API
 
-Use it for free with: https://github.com/oobabooga/text-generation-webui/tree/main/extensions/openai (shameless self plug!)
-and the [TheBloke](https://huggingface.co/TheBloke)'s vicuna-13B-1.1-GPTQ-4bit-128g or koala-13B-GPTQ-4bit-128g models for excellent results.
+Use it for free with: https://github.com/oobabooga/text-generation-webui/ OpenAI compatible API (shameless self plug!)
+Works very well with vicuna and mistral models, and many others.
 
 Heavily "inspired" by various blog posts and stackexchange comments.
-It's a quick and dirty hack, but it works pretty well. I wrote it to pipe (|) to a text-to-speech (tts) application. It uses the 'Edits' interface for OpenAI - which doesn't get enough credit for how great it is.
-
-Included as a bonus toy is the edits.py app, which is a thin command line wrapper around the Edits interface.
-
+It's a quick and dirty hack, but it works pretty well. I wrote it to pipe (|) to a text-to-speech (tts) application.
 
 ### Usage
 
