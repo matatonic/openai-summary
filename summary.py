@@ -148,7 +148,7 @@ def openai_completion(prompt: str, max_tokens: int = 2000) -> str:
         max_tokens=max_tokens,
         temperature=0.2,
     )
-    print(response.choices[0])
+    #print(response.choices[0])
     return response.choices[0].text
 
 # arbitrary cut, should fit in 2k context with instructions
