@@ -6,6 +6,8 @@ Works very well with vicuna and mistral models, and many others.
 Heavily "inspired" by various blog posts and stackexchange comments.
 It's a quick and dirty hack, but it works pretty well. I wrote it to pipe (|) to a text-to-speech (tts) application.
 
+Updated: Nov 26, 2023 to support the latest OpenAI API.
+
 ### Usage
 
 ```
