@@ -1,28 +1,41 @@
 #!/usr/bin/env python
 # Load the environment variables from the .env file
-from dotenv import load_dotenv
-load_dotenv()
+import dotenv
+dotenv.load_dotenv()
 
 import sys
 import re
 import argparse
-from requests import get
+import requests
+
 import openai
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
-from bs4 import BeautifulSoup
-try:
-    import textract
-except:
-    pass
-
-client = openai.OpenAI()
-
 import pysbd
 
+try:
+    import textract
+    has_textract = True
+except ImportError:
+    print("textract not installed, using basic text extraction for files")
+    has_textract = False
+
+try:
+    import trafilatura
+    has_trafilatura = True
+except ImportError:
+    print("trafilatura not installed, using BeautifulSoup for html text extraction")
+    from bs4 import BeautifulSoup
+    has_trafilatura = False
+
+client = openai.OpenAI()
 seg = pysbd.Segmenter(language='en', clean=True) # text is dirty, clean it up.
 
-# https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
+
 def get_url_html(url: str) -> str:
+    if has_trafilatura:
+        return trafilatura.fetch_url(url)
+
+    # https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
     headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
@@ -30,20 +43,22 @@ def get_url_html(url: str) -> str:
         'Accept-Language': 'en-US,en;q=0.8',
         'Connection': 'keep-alive'}
 
-    return get(url, headers=headers).content
+    return requests.get(url, headers=headers).content
 
-def get_html_text(html: str) -> list:
-    soup = BeautifulSoup(html, features="html.parser")
+def get_html_text(html: str) -> str:
+    if has_trafilatura:
+        text = trafilatura.extract(html, output_format='txt')
+    else:
+        soup = BeautifulSoup(html, features="html.parser")
 
-    # kill all script and style elements
-    for script in soup(["script", "style"]):
-        script.extract()    # rip it out
+        # kill all script and style elements
+        for script in soup(["script", "style"]):
+            script.extract()    # rip it out
 
-    # get text
-    text = soup.get_text()
+        # get text
+        text = soup.get_text()
 
-    return seg.segment(text)
-
+    return text
 
 def extract_youtube_video_id(url: str) -> str | None:
     """
@@ -57,7 +72,7 @@ def extract_youtube_video_id(url: str) -> str | None:
     return None
 
 # TODO: Use Time gaps to make natural breaks
-def get_video_transcript(video_id: str) -> list | None:
+def get_video_transcript(video_id: str) -> str | None:
     """
     Fetch the transcript of the provided YouTube video
     """
@@ -68,16 +83,16 @@ def get_video_transcript(video_id: str) -> list | None:
         # The video doesn't have a transcript
         return None
     
-    return seg.segment(' '.join([line["text"] for line in transcript]))
+    return ' '.join([line["text"] for line in transcript])
 
-def get_url_text(url: str) -> list:
+def get_url_text_list(url: str) -> list[str]:
     text_list = [ f"No text found for this url: {url}" ]
 
     # handle Youtube Videos
     video_id = extract_youtube_video_id(url)
     if video_id:
         # Fetch the video transcript
-        text_list = get_video_transcript(video_id)
+        text = get_video_transcript(video_id)
 
         # If no transcript is found, return an error message
         if not text_list:
@@ -85,30 +100,21 @@ def get_url_text(url: str) -> list:
     else:
         # Fetch the url text
         html = get_url_html(url)
-        text_list = get_html_text(html)
+        text = get_html_text(html)
 
-    return text_list
-
-
-def get_file_text(filename: str) -> list:
-    text = textract.process(filename).decode()
     return seg.segment(text)
 
+def get_file_text_list(filename: str) -> list[str]:
+    if has_textract:
+        text = textract.process(filename).decode()
+    elif '.htm' in filename.lower():
+        with open(filename, 'r') as f:
+            text = get_html_text(f.read())
+    else:
+        with open(filename, 'r') as f:
+            text = f.read()
 
-#def get_file_text(filename: str) -> list:
-#    text_list = [ f"No text found for this file: {filename}" ]
-#
-#    if '.htm' in filename.lower():
-#        with open(filename, 'r') as f:
-#            text_list = get_html_text(f.read())
-#    elif '.pdf' in filename.lower():
-#        with open(filename, 'r') as f:
-#            text_list = get_pdf_text(f.read())
-#    else:
-#        with open(filename, 'r') as f:
-#            text_list = seg.segment(f.read())
-#
-#    return text_list
+    return seg.segment(text)
 
 
 def openai_edit(instruction: str, text: str, max_tokens: int = 2048) -> str:
@@ -131,7 +137,6 @@ def openai_completion(prompt: str, max_tokens: int, stop = ['</s>']) -> str:
         temperature=0.2,
         stop=stop,
     )
-    #print(response.choices[0])
     return response.choices[0].text
 
 # organize text into paragraphs or logical chunks of a max size
@@ -207,8 +212,8 @@ def parse_args(arguments):
     parser.add_argument('-S', '--no_stream', action='store_true', default=False, help="Don't output text as it's created")
     parser.add_argument('-x', '--executive_summary', action='store_true', default=False, help="Include an Executive Summary")
     parser.add_argument('-X', '--executive_summary_only', action='store_true', default=False, help="Only output the Executive Summary")
-    parser.add_argument('-t', '--tldr', action='store_true', default=False, help="Include a TL;DR")
-    parser.add_argument('-T', '--tldr_only', action='store_true', default=False, help="Only output a TL;DR")
+    parser.add_argument('-t', '--tldr', action='store_true', default=False, help="Include a TL;DR (this uses a completion model, not chat)")
+    parser.add_argument('-T', '--tldr_only', action='store_true', default=False, help="Only output a TL;DR (this uses a completion model, not chat)")
     parser.add_argument('-b', '--max_size', action='store', default=5000, type=int, help="The maximum size (in characters) to summarize at once.")
 
     return parser.parse_args(arguments)
@@ -230,9 +235,9 @@ def main():
     text_list = [ "No text found" ]
 
     if args.url.lower().startswith('http'):
-        text_list = get_url_text(args.url)
+        text_list = get_url_text_list(args.url)
     else:
-        text_list = get_file_text(args.url)
+        text_list = get_file_text_list(args.url)
 
     # Summarize as bullet points
     if not (args.executive_summary_only or args.tldr_only):

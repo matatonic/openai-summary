@@ -1,3 +1,2 @@
-# Use With https://github.com/oobabooga/text-generation-webui/
-OPENAI_API_KEY=dummy
+OPENAI_API_KEY=sk-ip
 OPENAI_BASE_URL=http://0.0.0.0:5000/v1

@@ -1,11 +1,11 @@
-youtube-transcript-api
-#bs4
 beautifulsoup4
 openai
 pysbd
+python-dotenv
+youtube-transcript-api
 
-# if this is a pain to install, you only lose file summaries.
+# skip if this is a pain to install, you lose high quality file extraction (mostly PDF).
 textract
 
-# Unnecessary, but useful for loading .env files
-python-dotenv
+# skip If this is a pain to install, you may lose some text quality and download performance
+trafilatura
