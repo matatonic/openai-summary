@@ -1,11 +1,11 @@
-beautifulsoup4
-openai
+openai>=1.0.0
 pysbd
 python-dotenv
+#rich
+trafilatura[all]
 youtube-transcript-api
 
 # skip if this is a pain to install, you lose high quality file extraction (mostly PDF).
 textract
-
-# skip If this is a pain to install, you may lose some text quality and download performance
-trafilatura
+# optional faster, better language detection
+cchardet

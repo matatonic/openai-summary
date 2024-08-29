@@ -3,62 +3,159 @@
 import dotenv
 dotenv.load_dotenv()
 
-import sys
-import re
 import argparse
+import locale
+import os
+import re
 import requests
+import sys
+import tempfile
 
 import openai
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+import trafilatura
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 import pysbd
 
 try:
     import textract
     has_textract = True
 except ImportError:
-    print("textract not installed, using basic text extraction for files")
+    #print("textract not installed, using basic text extraction for files")
     has_textract = False
 
-try:
-    import trafilatura
-    has_trafilatura = True
-except ImportError:
-    print("trafilatura not installed, using BeautifulSoup for html text extraction")
-    from bs4 import BeautifulSoup
-    has_trafilatura = False
-
 client = openai.OpenAI()
-seg = pysbd.Segmenter(language='en', clean=True) # text is dirty, clean it up.
+seg = None
+SUMMARY_TASK = "Summary Instructions:\n- List the key points from the following text\n- Use a bulleted list in plain text format, no markdown, no other text\n- Be as concise as possible\n- Respond in the language of the text."
+EXEC_SUMMARY_TASK = "Instructions:\nWrite an executive summary of the following text, include a title. Output only plain text format, no markdown. Respond in the language of the text."
 
+# claude-3.5-sonnet made these mapping tables, it's unverified.
+language_data = {
+    'af': {'region': 'ZA', 'charset': 'ISO-8859-1,utf-8'},
+    'am': {'region': 'ET'},
+    'ar': {'region': 'SA'},
+    'as': {'region': 'IN', 'charset': 'ISO-8859-1,utf-8'},
+    'az': {'region': 'AZ'},
+    'be': {'region': 'BY'},
+    'bg': {'region': 'BG'},
+    'bn': {'region': 'BD'},
+    'bs': {'region': 'BA'},
+    'ca': {'region': 'ES', 'charset': 'ISO-8859-1,utf-8'},
+    'cs': {'region': 'CZ'},
+    'cy': {'region': 'GB'},
+    'da': {'region': 'DK'},
+    'de': {'region': 'DE'},
+    'el': {'region': 'GR'},
+    'en': {'region': 'US'},
+    'es': {'region': 'ES'},
+    'et': {'region': 'EE'},
+    'fa': {'region': 'IR'},
+    'fi': {'region': 'FI'},
+    'fr': {'region': 'FR', 'charset': 'ISO-8859-1,utf-8'},
+    'gu': {'region': 'IN'},
+    'he': {'region': 'IL'},
+    'hi': {'region': 'IN'},
+    'hr': {'region': 'HR'},
+    'hu': {'region': 'HU'},    
+    'hy': {'region': 'AM'},
+    'id': {'region': 'ID'},
+    'is': {'region': 'IS'},
+    'it': {'region': 'IT'},
+    'ja': {'region': 'JP', 'charset': 'Shift_JIS,utf-8'},
+    'ka': {'region': 'GE'},
+    'kk': {'region': 'KZ'},
+    'km': {'region': 'KH'},
+    'kn': {'region': 'IN'},
+    'ko': {'region': 'KR'},
+    'lo': {'region': 'LA'},
+    'lt': {'region': 'LT'},
+    'lv': {'region': 'LV'},
+    'mk': {'region': 'MK'},
+    'ml': {'region': 'IN'},
+    'mn': {'region': 'MN'},
+    'mr': {'region': 'IN'},
+    'ms': {'region': 'MY'},
+    'nb': {'region': 'NO'},
+    'ne': {'region': 'NP'},
+    'nl': {'region': 'NL'},
+    'nn': {'region': 'NO'},
+    'or': {'region': 'IN'},
+    'pa': {'region': 'IN'},
+    'pl': {'region': 'PL'},
+    'ps': {'region': 'AF'},
+    'pt': {'region': 'BR'},
+    'ro': {'region': 'RO'},
+    'ru': {'region': 'RU', 'charset': 'ISO-8859-5,utf-8'},
+    'sd': {'region': 'IN'},
+    'si': {'region': 'LK'},
+    'sk': {'region': 'SK'},
+    'sl': {'region': 'SI'},
+    'sq': {'region': 'AL'},
+    'sr': {'region': 'RS'},
+    'sv': {'region': 'SE'},
+    'sw': {'region': 'KE'},
+    'ta': {'region': 'IN'},
+    'te': {'region': 'IN'},
+    'tg': {'region': 'TJ'},
+    'th': {'region': 'TH'},
+    'tk': {'region': 'TM'},
+    'tr': {'region': 'TR'},
+    'uk': {'region': 'UA'},
+    'ur': {'region': 'PK'},
+    'uz': {'region': 'UZ'},
+    'vi': {'region': 'VN'},
+    'zh': {'region': 'CN', 'charset': 'GB2312,utf-8'}
+}
 
-def get_url_html(url: str) -> str:
-    if has_trafilatura:
-        return trafilatura.fetch_url(url)
+iso_1_to_iso_2 = {
+    'aa': 'aar', 'ab': 'abk', 'af': 'afr', 'ak': 'aka', 'sq': 'alb', 'am': 'amh',
+    'ar': 'ara', 'an': 'arg', 'hy': 'arm', 'as': 'asm', 'av': 'ava', 'ae': 'ave',
+    'ay': 'aym', 'az': 'aze', 'ba': 'bak', 'bm': 'bam', 'eu': 'baq', 'be': 'bel',
+    'bn': 'ben', 'bh': 'bih', 'bi': 'bis', 'bo': 'bod', 'bs': 'bos', 'br': 'bre',
+    'bg': 'bul', 'my': 'bur', 'ca': 'cat', 'cs': 'ces', 'ch': 'cha', 'ce': 'che',
+    'zh': 'chi', 'cu': 'chu', 'cv': 'chv', 'kw': 'cor', 'co': 'cos', 'cr': 'cre',
+    'cy': 'cym', 'da': 'dan', 'de': 'deu', 'dv': 'div', 'nl': 'dut', 'dz': 'dzo',
+    'el': 'ell', 'en': 'eng', 'eo': 'epo', 'et': 'est', 'ee': 'ewe', 'fo': 'fao',
+    'fa': 'fas', 'fj': 'fij', 'fi': 'fin', 'fr': 'fra', 'fy': 'fry', 'ff': 'ful',
+    'ka': 'geo', 'gd': 'gla', 'ga': 'gle', 'gl': 'glg', 'gv': 'glv', 'gn': 'grn',
+    'gu': 'guj', 'ht': 'hat', 'ha': 'hau', 'he': 'heb', 'hz': 'her', 'hi': 'hin',
+    'ho': 'hmo', 'hr': 'hrv', 'hu': 'hun', 'ig': 'ibo', 'is': 'ice', 'io': 'ido',
+    'ii': 'iii', 'iu': 'iku', 'ie': 'ile', 'ia': 'ina', 'id': 'ind', 'ik': 'ipk',
+    'it': 'ita', 'jv': 'jav', 'ja': 'jpn', 'kl': 'kal', 'kn': 'kan', 'ks': 'kas',
+    'kr': 'kau', 'kk': 'kaz', 'km': 'khm', 'ki': 'kik', 'rw': 'kin', 'ky': 'kir',
+    'kv': 'kom', 'kg': 'kon', 'ko': 'kor', 'kj': 'kua', 'ku': 'kur', 'lo': 'lao',
+    'la': 'lat', 'lv': 'lav', 'li': 'lim', 'ln': 'lin', 'lt': 'lit', 'lb': 'ltz',
+    'lu': 'lub', 'lg': 'lug', 'mk': 'mac', 'mh': 'mah', 'ml': 'mal', 'mi': 'mao',
+    'mr': 'mar', 'ms': 'may', 'mg': 'mlg', 'mt': 'mlt', 'mn': 'mon', 'na': 'nau',
+    'nv': 'nav', 'nr': 'nbl', 'nd': 'nde', 'ng': 'ndo', 'ne': 'nep', 'nn': 'nno',
+    'nb': 'nob', 'no': 'nor', 'ny': 'nya', 'oc': 'oci', 'oj': 'oji', 'or': 'ori',
+    'om': 'orm', 'os': 'oss', 'pa': 'pan', 'pi': 'pli', 'pl': 'pol', 'pt': 'por',
+    'ps': 'pus', 'qu': 'que', 'rm': 'roh', 'ro': 'ron', 'rn': 'run', 'ru': 'rus',
+    'sg': 'sag', 'sa': 'san', 'si': 'sin', 'sk': 'slk', 'sl': 'slv', 'se': 'sme',
+    'sm': 'smo', 'sn': 'sna', 'sd': 'snd', 'so': 'som', 'st': 'sot', 'es': 'spa',
+    'sc': 'srd', 'sr': 'srp', 'ss': 'ssw', 'su': 'sun', 'sw': 'swa', 'sv': 'swe',
+    'ty': 'tah', 'ta': 'tam', 'tt': 'tat', 'te': 'tel', 'tg': 'tgk', 'tl': 'tgl',
+    'th': 'tha', 'ti': 'tir', 'to': 'ton', 'tn': 'tsn', 'ts': 'tso', 'tk': 'tuk',
+    'tr': 'tur', 'tw': 'twi', 'ug': 'uig', 'uk': 'ukr', 'ur': 'urd', 'uz': 'uzb',
+    've': 'ven', 'vi': 'vie', 'vo': 'vol', 'wa': 'wln', 'wo': 'wol', 'xh': 'xho',
+    'yi': 'yid', 'yo': 'yor', 'za': 'zha', 'zu': 'zul'
+}
 
-    # https://stackoverflow.com/questions/328356/extracting-text-from-html-file-using-python
-    headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
+def request_headers(language_code = 'en'):
+    generic_headers = {
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
         'Accept-Encoding': 'none',
-        'Accept-Language': 'en-US,en;q=0.8',
-        'Connection': 'keep-alive'}
+        'Connection': 'keep-alive'
+    }
 
-    return requests.get(url, headers=headers).content
+    lang_data = language_data.get(language_code, language_data.get('en'))
+    region = lang_data.get('region', 'US') # sorry, but the internet be like that
+    charset = lang_data.get('charset', 'UTF-8')
 
-def get_html_text(html: str) -> str:
-    if has_trafilatura:
-        text = trafilatura.extract(html, output_format='txt')
-    else:
-        soup = BeautifulSoup(html, features="html.parser")
+    generic_headers['Accept-Language'] = f"{language_code}-{region},{language_code};q=0.8"
+    generic_headers['Accept-Charset'] = f"{charset};q=0.7,*;q=0.3"
 
-        # kill all script and style elements
-        for script in soup(["script", "style"]):
-            script.extract()    # rip it out
-
-        # get text
-        text = soup.get_text()
-
-    return text
+    return generic_headers
 
 def extract_youtube_video_id(url: str) -> str | None:
     """
@@ -72,72 +169,106 @@ def extract_youtube_video_id(url: str) -> str | None:
     return None
 
 # TODO: Use Time gaps to make natural breaks
-def get_video_transcript(video_id: str) -> str | None:
+def get_video_transcript(video_id: str, language: str) -> str | None:
     """
     Fetch the transcript of the provided YouTube video
     """
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
+        return ' '.join([line["text"] for line in transcript])
+
+    except NoTranscriptFound:
+        # find one that can work and translate it
+        try:
+            for tr in YouTubeTranscriptApi.list_transcripts(video_id):
+                if tr.is_translatable:
+                    try:
+                        transcript = tr.translate(language).fetch()
+                        return ' '.join([line["text"] for line in transcript])
+                    except:
+                        pass
+        except:
+            pass
+
     except TranscriptsDisabled:
+        pass
         # The video doesn't have a transcript
-        return None
     
-    return ' '.join([line["text"] for line in transcript])
+    return None
 
-def get_url_text_list(url: str) -> list[str]:
-    text_list = [ f"No text found for this url: {url}" ]
-
+def get_url_text(url: str, language: str) -> str:
     # handle Youtube Videos
     video_id = extract_youtube_video_id(url)
     if video_id:
         # Fetch the video transcript
-        text = get_video_transcript(video_id)
+        text = get_video_transcript(video_id, language)
 
         # If no transcript is found, return an error message
-        if not text_list:
-            return f"No English transcript found for this video: {url}"
+        if not text:
+            return f"No '{language}' transcript found for this video: {url}"
     else:
-        # Fetch the url text
-        html = get_url_html(url)
-        text = get_html_text(html)
+        # Fetch the head, and determine the filetype
+        headers = request_headers(language)
 
-    return seg.segment(text)
+        head = requests.head(url, headers=headers)
+        if head.status_code == 200 and 'text/' in head.headers['content-type']:
+            # Fetch the url text
+            html = trafilatura.fetch_url(url, headers=headers)
+            text = trafilatura.extract(html, output_format='txt', target_language=language)
+        else:
+            # without textract this will suck.
+            response = requests.get(url, headers=headers)
+            # get filename form headers
+            try:
+                filename = response.headers['Content-Disposition'].split('filename=')[1].strip('"')
+            except:
+                # or from url
+                filename = os.path.basename(url).split('?')[0]
 
-def get_file_text_list(filename: str) -> list[str]:
-    if has_textract:
-        text = textract.process(filename).decode()
-    elif '.htm' in filename.lower():
+            try:
+                fd, tmp_filename = tempfile.mkstemp(suffix=filename)
+                os.write(fd, response.content)
+                text = get_file_text(tmp_filename, language)
+            finally:
+                os.unlink(tmp_filename)
+                pass
+
+    return text
+
+def get_file_text(filename: str, language: str) -> str:
+    if '.htm' in filename.lower():
         with open(filename, 'r') as f:
-            text = get_html_text(f.read())
+            text = trafilatura.extract(f.read(), output_format='txt', target_language=language)
+    elif has_textract:
+        text = textract.process(filename, language=iso_1_to_iso_2.get(language)).decode()
     else:
         with open(filename, 'r') as f:
             text = f.read()
 
-    return seg.segment(text)
+    return text
 
-
-def openai_edit(instruction: str, text: str, max_tokens: int = 2048) -> str:
+def openai_edit(instruction: str, text: str, stream: bool, max_new_tokens: int = 2048, model: str = 'gpt-3.5-turbo') -> str:
     # edit is deprecated, fake it.
-    # Fake system message also
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{'role': 'user', 'content': instruction}, {'role': 'assistant', 'content': 'OK'}, {'role': 'user', 'content': text} ],
+        model=model,
+        messages=[{'role': 'user', 'content': f"{instruction}\n\n```text\n{text}\n```\n" }],
         temperature=0.2,
-        max_tokens=max_tokens,
+        max_tokens=max_new_tokens,
+        stream=stream,
     )
     
-    return response.choices[0].message.content
-
-def openai_completion(prompt: str, max_tokens: int, stop = ['</s>']) -> str:
-    response = client.completions.create(
-        model="gpt-3.5-turbo",
-        prompt=prompt,
-        max_tokens=max_tokens,
-        temperature=0.2,
-        stop=stop,
-    )
-    return response.choices[0].text
+    if stream:
+        texts = []
+        for chunk in response:
+            content = chunk.choices[0].delta.content
+            if content:
+                print(content, end='', flush=True)
+                texts.extend([content])
+    
+        print('', flush=True)
+        return ''.join(texts)
+    else:
+        return response.choices[0].message.content
 
 # organize text into paragraphs or logical chunks of a max size
 # trying for fairly uniform sized chunks
@@ -148,14 +279,14 @@ def chunk_large_text(text_list: list, max_size: int) -> list[str]:
     for s in text_list:
         s_len = len(s)
         if para and len(para) + s_len > max_size:
-            txts.append(para)
+            txts.extend([para])
             para = ''
     
         if s_len <= max_size:
             para += s + '\n'
         else:
             if para:
-                txts.append(para)
+                txts.extend([para])
                 para = ''
 
             # big chunk, no natural breaks... break it up on words at least
@@ -166,20 +297,24 @@ def chunk_large_text(text_list: list, max_size: int) -> list[str]:
             i = 0
             while i < s_len:
                 if s_len - i <= chunk:
-                    txts.append('… ' + s[i:] + ' …')
+                    txts.extend(['… ' + s[i:] + ' …'])
                     break
                 clip_i = s.find(' ', i + chunk)
                 # if clip_i - i >> max_size, clamp clip_i
-                txts.append('… ' + s[i:clip_i] + ' …')
+                txts.extend(['… ' + s[i:clip_i] + ' …'])
                 i = clip_i + 1
 
     # left overs
     if para:
-        txts.append(para)
+        txts.extend([para])
 
     return txts
 
-def summarize_large_text(text_list: list, max_size: int, stream = False, progress = False) -> str:
+def summarize_large_text(text: str, max_size: int, stream = False, progress = False, max_new_tokens = 2048, model: str = 'gpt-3.5-turbo') -> str:
+    try:
+        text_list = seg.segment(text)
+    except:
+        text_list = [ t.strip() for t in text.split('\n') ]
 
     txts = chunk_large_text(text_list, max_size)
 
@@ -190,12 +325,8 @@ def summarize_large_text(text_list: list, max_size: int, stream = False, progres
         if progress:
             print('\rWorking... {:.0f}%'.format(100.0 * n / txts_len), end = '', file=sys.stderr, flush=True)
 
-        sum = openai_edit("List the key points from the following text as a bulleted list. Be as concise as possible.", t)
-        
-        if stream:
-            print(sum, flush=True)
-
-        summaries.append(sum)
+        summary = openai_edit(SUMMARY_TASK, t, stream=stream, max_new_tokens=max_new_tokens, model=model)
+        summaries.extend([summary])
 
     if progress:
         print('\rFinished! 100%', file=sys.stderr, flush=True)
@@ -203,75 +334,73 @@ def summarize_large_text(text_list: list, max_size: int, stream = False, progres
     return '\n'.join(summaries)
 
 def parse_args(arguments):
+
+    lang, _ = locale.getdefaultlocale()
+    lang_default = os.environ.get('LANG', lang if lang else 'en').split('_')[0]
+
     parser = argparse.ArgumentParser(
                 prog='summary.py',
                 description='Summarize URLs or files, including YouTube videos via transcriptions',
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('url', help="URL or file to summarize (including YouTube videos via transcriptions)")
+    parser.add_argument('-l', '--language', default=lang_default, help="Set the language used for subtitles, web requests and text parsing (os default)") #, choices=list(pysbd.languages.LANGUAGE_CODES.keys()))
+    parser.add_argument('-m', '--model', default='gpt-3.5-turbo', help="Set the large language model to use for summary")
     parser.add_argument('-p', '--progress', action='store_true', default=False, help="Show percentage progress")
     parser.add_argument('-S', '--no_stream', action='store_true', default=False, help="Don't output text as it's created")
     parser.add_argument('-x', '--executive_summary', action='store_true', default=False, help="Include an Executive Summary")
     parser.add_argument('-X', '--executive_summary_only', action='store_true', default=False, help="Only output the Executive Summary")
-    parser.add_argument('-t', '--tldr', action='store_true', default=False, help="Include a TL;DR (this uses a completion model, not chat)")
-    parser.add_argument('-T', '--tldr_only', action='store_true', default=False, help="Only output a TL;DR (this uses a completion model, not chat)")
-    parser.add_argument('-b', '--max_size', action='store', default=5000, type=int, help="The maximum size (in characters) to summarize at once.")
+    parser.add_argument('-M', '--max_new_tokens', default=2048, help="Max new tokens to generate at once")
+    parser.add_argument('-b', '--max_size', action='store', default=5000, type=int, help="The maximum size (in characters) to summarize at once")
 
     return parser.parse_args(arguments)
 
 def main():
+    global seg
+
     args = parse_args(sys.argv[1:])
-    #args = parse_args(['https://www.youtube.com/watch?v=3yHWM8TG-nU', '-b', '10000000000', '-T', ])
+    #args = parse_args(['https://www.youtube.com/watch?v=3yHWM8TG-nU', '-b', '10000000000', '-X', ])
 
     if args.executive_summary_only:
-        args.tldr_only = False # force one or the other
-        args.tldr = False
         args.executive_summary = True
 
-    if args.tldr_only:
-        args.executive_summary_only = False # force one or the other
-        args.executive_summary = False
-        args.tldr = True
+    try:
+        seg = pysbd.Segmenter(language=args.language, clean=True) # text is dirty, clean it up.
+    except:
+        pass # try to ignore this and continue on.
 
-    text_list = [ "No text found" ]
+    full_text = "No text found"
+    summary = None
 
     if args.url.lower().startswith('http'):
-        text_list = get_url_text_list(args.url)
+        full_text = get_url_text(args.url, language=args.language)
     else:
-        text_list = get_file_text_list(args.url)
+        full_text = get_file_text(args.url, language=args.language)
 
     # Summarize as bullet points
-    if not (args.executive_summary_only or args.tldr_only):
-        summary = summarize_large_text(text_list, max_size=args.max_size, stream= not args.no_stream, progress=args.progress)
+    if not args.executive_summary_only:
+        summary = summarize_large_text(full_text, max_size=args.max_size, stream=not args.no_stream, progress=args.progress, max_new_tokens=args.max_new_tokens, model=args.model)
         if args.no_stream:
-            print(summary)
-    else:
-        summary = '\n'.join(text_list)
+            print(summary, flush=True) # print the full summary points
 
-    # Executive/TL;DR
-    if args.executive_summary or args.tldr:
-        # if summary too large, maybe break into a list and summarize again.
-        if len(summary) > args.max_size:
-            
-            # Don't stream intermediate results
-            stream = args.no_stream
-            args.no_stream = True
+    # Executive Summary
+    if args.executive_summary:
+        if len(full_text) > args.max_size:
+            # if the full content is too large, summarize the summary
+            if summary is not None:
+                full_text = summary
 
-            while len(summary) > args.max_size:
-                summary = summarize_large_text(summary.split('\n'), max_size=args.max_size, stream=False, progress=args.progress)
+            # while the summary is too large, keep summarizing it
+            while len(full_text) > args.max_size:
+                summary = summarize_large_text(full_text, max_size=args.max_size, stream=False, progress=args.progress, max_new_tokens=args.max_new_tokens, model=args.model)
+                if len(summary) >= len(full_text):
+                    print("\nWARNING: Unable to reduce final summary size, final results may be truncated or fail, aborting any further reduction.\n", file=sys.stderr)
+                    break
+                full_text = summary
 
-            args.no_stream = stream
-
-        if args.executive_summary:
-            if not args.executive_summary_only:
-                print('\nExecutive Summary')
-            exec_summary = openai_edit("Write an executive summary of the following text.", summary, max_tokens=args.max_size)
-            print(exec_summary)
-
-        if args.tldr:
-            tldr = openai_completion(summary + "\n\nTL;DR\n", stop=["\n\n", "</s>"], max_tokens=args.max_size)
-            if not args.tldr_only:
-                print('\nTL;DR')
-            print(tldr)
+        print('', flush=True)
+        exec_summary = openai_edit(EXEC_SUMMARY_TASK, full_text, stream=not args.no_stream, max_new_tokens=args.max_new_tokens, model=args.model)
+        if args.no_stream:
+            print(exec_summary, flush=True) # print the executive summary
 
 if __name__ == '__main__':
     main()
