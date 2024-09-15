@@ -13,6 +13,9 @@ Use it for free with any OpenAI API chat completion API server.
 
 ## Latest Updates
 
+Sep 15, 2024
+- fix extra headers arg
+
 Aug 28, 2024:
 - Code cleanup & updates, updated requirements.txt
 - multilingual support

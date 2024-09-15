@@ -209,15 +209,13 @@ def get_url_text(url: str, language: str) -> str:
     else:
         # Fetch the head, and determine the filetype
         headers = request_headers(language)
+        response = requests.get(url, headers=headers)
 
-        head = requests.head(url, headers=headers)
-        if head.status_code == 200 and 'text/' in head.headers['content-type']:
-            # Fetch the url text
-            html = trafilatura.fetch_url(url, headers=headers)
-            text = trafilatura.extract(html, output_format='txt', target_language=language)
+        if response.status_code == 200 and 'text/' in response.headers['content-type']:
+            text = trafilatura.extract(response.content, output_format='txt', target_language=language)
         else:
             # without textract this will suck.
-            response = requests.get(url, headers=headers)
+            
             # get filename form headers
             try:
                 filename = response.headers['Content-Disposition'].split('filename=')[1].strip('"')
